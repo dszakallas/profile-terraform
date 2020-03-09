@@ -8,7 +8,7 @@ Everything is managed except the S3 bucket and the Route 53 Hosted Zone.
 
 1. <bucket> Create a private S3 bucket manually and enable web hosting.
 2. <domain> Buy a domain, create hosted zone, register DNS manually.
-3. `terraform apply -var="domain=<domain>" -var="bucket=<bucket>" -var="distribution=MyFancyBlog"
+3. `terraform apply -var="domain=<domain>" -var="bucket=<bucket>" -var="distribution=MyFancyBlog"`
 
 Note: the `distribution` parameter is used as prefix for certain resources such as IAM Roles to make it easier to identify and prevent name clashes in case you wish to create multiple blogs.
 
