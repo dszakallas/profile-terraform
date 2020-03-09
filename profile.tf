@@ -17,11 +17,6 @@ variable "domain" {
   default = "szakallas.eu"
 }
 
-variable "url_rewrite_package" {
-  type = string
-  default = "build/url_rewrite.zip"
-}
-
 locals {
   distribution_origin_id = "${var.distribution}Origin"
 }
