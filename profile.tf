@@ -133,7 +133,7 @@ resource "aws_cloudfront_distribution" "distribution" {
 
     lambda_function_association {
       event_type = "origin-request"
-      lambda_arn = "${aws_lambda_function.url_rewrite.arn}:2" # FIXME https://github.com/terraform-providers/terraform-provider-aws/issues/8081
+      lambda_arn = aws_lambda_function.url_rewrite.qualified_arn
       include_body = false
     }
   }
