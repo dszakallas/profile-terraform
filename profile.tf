@@ -1,19 +1,27 @@
+terraform {
+  backend "s3" {
+    bucket = "state.szakallas.eu"
+    key    = "szakallas.eu/terraform.tfstate"
+    region = "us-east-2"
+  }
+}
+
 variable "aws_region" {
   default = "us-east-1"
 }
 
 variable "distribution" {
-  type = string
+  type    = string
   default = "Szakallas"
 }
 
 variable "bucket" {
-  type = string
+  type    = string
   default = "szakallas.eu"
 }
 
 variable "domain" {
-  type = string
+  type    = string
   default = "szakallas.eu"
 }
 
@@ -25,12 +33,17 @@ provider "aws" {
   region = var.aws_region
 }
 
-data "aws_s3_bucket" "storage" {
+data "aws_route53_zone" "zone" {
+  name         = "${var.domain}."
+  private_zone = false
+}
+
+resource "aws_s3_bucket" "storage" {
   bucket = var.bucket
 }
 
 resource "aws_s3_bucket_policy" "storage" {
-  bucket = data.aws_s3_bucket.storage.id
+  bucket = aws_s3_bucket.storage.id
 
   policy = <<EOF
 {
@@ -44,16 +57,11 @@ resource "aws_s3_bucket_policy" "storage" {
         "AWS": "${aws_cloudfront_origin_access_identity.distribution.iam_arn}"
       },
       "Action": "s3:GetObject",
-      "Resource": "arn:aws:s3:::${data.aws_s3_bucket.storage.bucket}/*"
+      "Resource": "arn:aws:s3:::${aws_s3_bucket.storage.bucket}/*"
     }
   ]
 }
 EOF
-}
-
-data "aws_route53_zone" "zone" {
-  name         = "${var.domain}."
-  private_zone = false
 }
 
 resource "aws_route53_record" "distribution" {
@@ -79,20 +87,29 @@ resource "aws_acm_certificate" "cert" {
 
 resource "aws_acm_certificate_validation" "cert" {
   certificate_arn         = aws_acm_certificate.cert.arn
-  validation_record_fqdns = [aws_route53_record.cert_validation.fqdn]
+  validation_record_fqdns = [for record in aws_route53_record.cert_validation : record.fqdn]
 }
 
 resource "aws_route53_record" "cert_validation" {
-  name    = aws_acm_certificate.cert.domain_validation_options.0.resource_record_name
-  type    = aws_acm_certificate.cert.domain_validation_options.0.resource_record_type
-  zone_id = data.aws_route53_zone.zone.id
-  records = [aws_acm_certificate.cert.domain_validation_options.0.resource_record_value]
-  ttl     = 60
+  for_each = {
+    for dvo in aws_acm_certificate.cert.domain_validation_options : dvo.domain_name => {
+      name   = dvo.resource_record_name
+      record = dvo.resource_record_value
+      type   = dvo.resource_record_type
+    }
+  }
+
+  allow_overwrite = true
+  name            = each.value.name
+  records         = [each.value.record]
+  ttl             = 60
+  type            = each.value.type
+  zone_id         = data.aws_route53_zone.zone.zone_id
 }
 
 resource "aws_cloudfront_distribution" "distribution" {
   origin {
-    domain_name = data.aws_s3_bucket.storage.bucket_regional_domain_name
+    domain_name = aws_s3_bucket.storage.bucket_regional_domain_name
     origin_id   = local.distribution_origin_id
 
     s3_origin_config {
@@ -106,10 +123,22 @@ resource "aws_cloudfront_distribution" "distribution" {
 
   aliases = ["${var.domain}"]
 
+  custom_error_response {
+    error_code         = 404
+    response_code      = 404
+    response_page_path = "/404/"
+  }
+
+  custom_error_response {
+    error_code         = 403
+    response_code      = 404
+    response_page_path = "/404/"
+  }
+
   viewer_certificate {
-    acm_certificate_arn = aws_acm_certificate.cert.arn
-    minimum_protocol_version = "TLSv1.1_2016"
-    ssl_support_method = "sni-only"
+    acm_certificate_arn      = aws_acm_certificate.cert.arn
+    minimum_protocol_version = "TLSv1.2_2021"
+    ssl_support_method       = "sni-only"
   }
 
   default_cache_behavior {
@@ -132,8 +161,8 @@ resource "aws_cloudfront_distribution" "distribution" {
     compress               = true
 
     lambda_function_association {
-      event_type = "origin-request"
-      lambda_arn = aws_lambda_function.url_rewrite.qualified_arn
+      event_type   = "origin-request"
+      lambda_arn   = aws_lambda_function.url_rewrite.qualified_arn
       include_body = false
     }
   }
@@ -184,7 +213,7 @@ resource "aws_lambda_function" "url_rewrite" {
   filename         = data.archive_file.url_rewrite.output_path
   source_code_hash = data.archive_file.url_rewrite.output_base64sha256
 
-  runtime = "nodejs12.x"
+  runtime = "nodejs16.x"
   publish = true
 }
 

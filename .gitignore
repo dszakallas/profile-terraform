@@ -4,6 +4,9 @@ build
 # Local .terraform directories
 **/.terraform/*
 
+# Lock files
+*.lock.hcl
+
 # .tfstate files
 *.tfstate
 *.tfstate.*
